@@ -168,7 +168,8 @@ class ValuesCheckTool:
                         if isinstance(val, datetime):
                             row_list.append(val.strftime('%Y-%m-%d')) # Format as YYYY-MM-DD
                         else:
-                            row_list.append(val)
+                            clean_val = str(val).replace("'", "").replace(",", ";").replace("\n","_n")
+                            row_list.append(clean_val)
                     
                     if row_list not in results:
                         results.append(row_list)
@@ -276,7 +277,7 @@ class ValuesCheckTool:
                     # Clean attribute values
                     attrs = []
                     for val in row[:-1]:
-                        clean_val = str(val).replace("'", "").replace(",", ";")
+                        clean_val = str(val).replace("'", "").replace(",", ";").replace("\n","_n")
                         if len(clean_val) > 200:
                             clean_val = clean_val[:200] + "..."
                         attrs.append(clean_val)
