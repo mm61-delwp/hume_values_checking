@@ -422,7 +422,7 @@ class ValuesCheckTool:
                     if def_query and len(def_query.strip()) > 1:
                         theme_layer = arcpy.management.SelectLayerByAttribute(theme_path, "NEW_SELECTION", def_query)
                     else:
-                        theme_layer = theme_path
+                        theme_layer = arcpy.management.SelectLayerByAttribute(theme_path, "CLEAR_SELECTION")
                     
                     # Get method and reporting fields
                     method = row[6]  # CHECK_METHOD
@@ -440,6 +440,11 @@ class ValuesCheckTool:
                     
                     # Check buffer if specified
                     if buffer_dist and buffer_dist > 0:
+                        if def_query and len(def_query.strip()) > 1:
+                            # reset selection
+                            theme_layer = arcpy.management.SelectLayerByAttribute(theme_path, "NEW_SELECTION", def_query)
+                        else:
+                            theme_layer = arcpy.management.SelectLayerByAttribute(theme_path, "CLEAR_SELECTION")
                         self._process_buffer(current_feature, theme_layer, buffer_dist, 
                             check_func, format_func, output_file, results, *reporting_fields)
             
