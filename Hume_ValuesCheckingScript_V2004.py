@@ -3,8 +3,8 @@ ArcGIS Pro Toolbox Script - Values Check Tool
 Performs spatial analysis to check values intersecting with input features.
 Supports presence checks, counts, and area/length measurements with optional buffer zones.
 Author: 
-Date: 20250718
-Version: 2.0.0.4 (Refactored)
+Date: 20250729
+Version: 2.0.0.5 (Refactored)
 """
 import os
 import arcpy
@@ -16,11 +16,11 @@ from typing import List, Tuple, Optional, Any
 #####################################################################################
 
 # Manual parameters - script will use these if arcpy.GetParameterAsText isn't found
-FEATURE_CLASS   = 'C:\\data\\daptest\\Hume_DAP.shp'             # Input Feature Class
-FEATURE_ID      = 'dap_ref_no'                                  # Feature ID Field
+FEATURE_CLASS   = 'C:\\data\\daptest\\Hume_uploadtoVDP_20250718.gdb\\DAP_FINAL_AREA_20250718'             # Input Feature Class
+FEATURE_ID      = 'DAP_REF_NO'                                  # Feature ID Field
 THEME_REFTAB    = 'C:\\data\\daptest\\Single Report Tool\\Reference Tables\\reftables.gdb\\REFTABLE_INDIGENOUS_HERITAGE_ALL_RECORDS'  # Theme Reference Table
 GISPUB_LOCATION = 'C:\\data'                                    # CSDL Location
-OUT_PATH        = 'C:\\data\\daptest\\test_fix_gdb_location'    # Output Path
+OUT_PATH        = 'C:\\data\\20250709_hume_test'    # Output Path
 
 ######################################################################################
 ######################################################################################
@@ -50,15 +50,15 @@ class ValuesCheckTool:
         arcpy.env.parallelProcessingFactor = "75%"
         arcpy.SetLogHistory(False)
         
-        # Set spatial reference to VICGRID2020
-        sr = arcpy.SpatialReference(7899)
+        
+        sr = arcpy.SpatialReference(7899) # Set spatial reference to VICGRID2020
+        # sr = arcpy.SpatialReference(4283) # Set spatial reference to GDA94
         arcpy.env.outputCoordinateSystem = sr
+        arcpy.env.cartographicCoordinateSystem = sr
         
         # Create output directory and temp workspace
         os.makedirs(self.output_path, exist_ok=True)
-        self._create_temp_workspace()
-    
-    def _create_temp_workspace(self) -> None:
+
         """Create temporary geodatabase workspace."""
         self.temp_gdb = os.path.join(self.output_path, "valuescheck_temp.gdb")
         if arcpy.Exists(self.temp_gdb):
@@ -142,12 +142,11 @@ class ValuesCheckTool:
         """Get unique values present in intersecting features."""
         try:
             desc = arcpy.Describe(values_fc)
-            # Select intersecting features
-            intersecting = arcpy.SelectLayerByLocation_management(
-                values_fc, "INTERSECT", input_feature, selection_type="SUBSET_SELECTION"
-            )
             
-            feature_count = int(arcpy.GetCount_management(intersecting).getOutput(0))
+            # Spatial selection
+            values_intersecting = arcpy.management.SelectLayerByLocation(values_fc, "INTERSECT", input_feature, selection_type="SUBSET_SELECTION")
+
+            feature_count = int(arcpy.GetCount_management(values_intersecting).getOutput(0))
             if feature_count == 0:
                 self.logMessage('info', f"{desc.baseName} {checktype} presence results: 0 unique values")
                 return [[]]
@@ -158,40 +157,43 @@ class ValuesCheckTool:
                 self.logMessage('info', f"{desc.baseName} {checktype} presence results: 0 reporting fields")
                 return [[]]
             
-            # Collect unique values
-            results = []
-
-            with arcpy.da.SearchCursor(intersecting, reporting_fields) as cursor:
+            # Use set for much faster duplicate checking
+            results_set = set()
+            
+            with arcpy.da.SearchCursor(values_intersecting, reporting_fields) as cursor:
                 for row in cursor:
+                    # Process attributes
                     row_list = []
                     for val in row:
                         if isinstance(val, datetime):
-                            row_list.append(val.strftime('%Y-%m-%d')) # Format as YYYY-MM-DD
-                        else:
+                            row_list.append(val.strftime('%Y-%m-%d'))
+                        elif val is not None:
                             clean_val = str(val).replace("'", "").replace(",", ";").replace("\n","_n")
                             row_list.append(clean_val)
                     
-                    if row_list not in results:
-                        results.append(row_list)
+                    # Add to set (automatic duplicate removal)
+                    results_set.add(tuple(row_list))
             
+            # Convert to list and sort
+            results = [list(item) for item in results_set]
             results.sort()
-            self.logMessage('info', f"{desc.baseName} {checktype} presence results: {len(results)} unique values")
             
+            self.logMessage('info', f"{desc.baseName} {checktype} presence results: {len(results)} unique values")
             return results
             
         except Exception as e:
-            self.logMessage('error', f"Error in get_values_present: {str(e)}")
+            self.logMessage('error', f"Error in get_values_present_fast: {str(e)}")
             return [[]]
     
     def get_values_count(self, input_feature: str, values_fc: str, checktype: str, *report_fields: str) -> List[List[Any]]:
-        """Get values with their occurrence counts."""
+        """Get intersecting values with their occurrence counts."""
         try:
             desc = arcpy.Describe(values_fc)
-            intersecting = arcpy.SelectLayerByLocation_management(
-                values_fc, "INTERSECT", input_feature, selection_type="SUBSET_SELECTION"
-            )
             
-            feature_count = int(arcpy.GetCount_management(intersecting).getOutput(0))
+            # Spatial selection
+            values_intersecting = arcpy.management.SelectLayerByLocation(values_fc, "INTERSECT", input_feature, selection_type="SUBSET_SELECTION")
+            
+            feature_count = int(arcpy.GetCount_management(values_intersecting).getOutput(0))
             if feature_count == 0:
                 self.logMessage('info', f"{desc.baseName} {checktype} count results: 0 unique values")
                 return [[]]
@@ -201,11 +203,20 @@ class ValuesCheckTool:
                 self.logMessage('info', f"{desc.baseName} {checktype} count results: 0 reporting values")
                 return [[]]
             
-            # Count occurrences
+            # Count occurrences with proper attribute cleaning
             value_counts = {}
-            with arcpy.da.SearchCursor(intersecting, reporting_fields) as cursor:
+            with arcpy.da.SearchCursor(values_intersecting, reporting_fields) as cursor:
                 for row in cursor:
-                    key = tuple(row)
+                    # Clean the row data
+                    cleaned_row = []
+                    for val in row:
+                        if isinstance(val, datetime):
+                            cleaned_row.append(val.strftime('%Y-%m-%d'))
+                        elif val is not None:
+                            clean_val = str(val).replace("'", "").replace(",", ";").replace("\n", "_n")
+                            cleaned_row.append(clean_val)
+                    
+                    key = tuple(cleaned_row)
                     value_counts[key] = value_counts.get(key, 0) + 1
             
             # Format results
@@ -219,48 +230,30 @@ class ValuesCheckTool:
         except Exception as e:
             self.logMessage('error', f"Error in get_values_count: {str(e)}")
             return [[]]
-    
+
     def get_values_areas(self, input_feature: str, values_fc: str, checktype: str, *report_fields: str) -> List[List[Any]]:
-        """Get values with their area/length measurements."""
+        """Get values with their area/length measurements using geometry intersection."""
         try:
             desc = arcpy.Describe(values_fc)
             
+            # Get the input feature geometry
+            input_geom = None
+            with arcpy.da.SearchCursor(input_feature, ["SHAPE@"]) as cursor:
+                for row in cursor:
+                    input_geom = row[0]
+                    break  # Only need the first (selected) feature
+            
+            if not input_geom:
+                self.logMessage('error', "Could not get input feature geometry")
+                return [[]]
+            
             # First, do spatial selection to reduce dataset size
-            intersecting_layer = f"{desc.baseName}_intersecting"
-            arcpy.management.SelectLayerByLocation(values_fc, "INTERSECT", input_feature, selection_type="SUBSET_SELECTION")
+            values_intersecting = arcpy.management.SelectLayerByLocation(values_fc, "INTERSECT", input_feature, selection_type="SUBSET_SELECTION")
             
             # Check if any features were selected
-            selected_count = int(arcpy.GetCount_management(values_fc).getOutput(0))
+            selected_count = int(arcpy.GetCount_management(values_intersecting).getOutput(0))
             if selected_count == 0:
                 self.logMessage('info', f"{desc.baseName} {checktype} measure results: 0 unique values")
-                return [[]]
-            
-            # Make a layer from the selection for clipping
-            arcpy.management.MakeFeatureLayer(values_fc, intersecting_layer)
-            
-            # Determine measurement type from original dataset
-            geometry_type = desc.shapeType.upper()
-            
-            if geometry_type == "POLYGON":
-                measure_field = "SHAPE@AREA"
-                unit_conversion = lambda x: f"{x / 10000:.1f}ha"
-            elif geometry_type == "POLYLINE":
-                measure_field = "SHAPE@LENGTH"
-                unit_conversion = lambda x: f"{x / 1000:.3f}km"
-            else:
-                self.logMessage('error', f"Unsupported geometry type: {geometry_type}")
-                return [[]]
-            
-            # Now clip only the selected features (much faster)
-            clip_name = f"{desc.baseName}_clip"
-            arcpy.analysis.Clip(intersecting_layer, input_feature, clip_name)
-            
-            # Verify clipped features exist
-            feature_count = int(arcpy.GetCount_management(clip_name).getOutput(0))
-            if feature_count == 0:
-                self.logMessage('info', f"{desc.baseName} {checktype} measure results: 0 unique values")
-
-                arcpy.Delete_management(clip_name)
                 return [[]]
             
             reporting_fields = self.get_reporting_fields(list(report_fields))
@@ -268,62 +261,91 @@ class ValuesCheckTool:
                 self.logMessage('info', f"{desc.baseName} {checktype} measure results: 0 reporting fields")
                 return [[]]
             
+            # Determine measurement type
+            geometry_type = desc.shapeType.upper()
+            
+            if geometry_type == "POLYGON":
+                measure_field = "SHAPE@"
+                def calculate_measure(geom):
+                    intersected = geom.intersect(input_geom, 4)  # 4 = esriGeometryIntersection
+                    return intersected.getArea() if intersected else 0
+                unit_conversion = lambda x: f"{x / 10000:.1f}ha"
+            elif geometry_type == "POLYLINE":
+                measure_field = "SHAPE@"
+                def calculate_measure(geom):
+                    intersected = geom.intersect(input_geom, 4)  # 4 = esriGeometryIntersection
+                    return intersected.getLength if intersected else 0
+                unit_conversion = lambda x: f"{x / 1000:.3f}km"
+            else:
+                self.logMessage('error', f"Unsupported geometry type: {geometry_type}")
+                return [[]]
+            
             fields = reporting_fields + [measure_field]
             
-            # Aggregate measurements by attributes
+            # Aggregate measurements by attributes using geometry intersection
             value_measures = {}
-            with arcpy.da.SearchCursor(clip_name, fields) as cursor:
+            processed_count = 0
+            
+            with arcpy.da.SearchCursor(values_intersecting, fields) as cursor:
                 for row in cursor:
-                    # Clean attribute values
-                    attrs = []
-                    for val in row[:-1]:
-                        clean_val = str(val).replace("'", "").replace(",", ";").replace("\n","_n")
-                        if len(clean_val) > 200:
-                            clean_val = clean_val[:200] + "..."
-                        attrs.append(clean_val)
-                    
-                    # ensure total length of attributes doesn't exceed 200 characters
-                    total_len = sum(len(attr) for attr in attrs) + 3 * (len(attrs) - 1)
-
-                    while total_len > 200:
-                        # Find the longest attribute
-                        longest_idx = max(range(len(attrs)), key=lambda i: len(attrs[i]))
-                        longest_attr = attrs[longest_idx]
-                        longest_len = len(longest_attr)
+                    try:
+                        # Calculate intersection measure
+                        feature_geom = row[-1]
+                        intersected_measure = calculate_measure(feature_geom)
                         
-                        # Remove existing ellipsis if present
-                        if longest_attr.endswith("..."):
-                            longest_attr = longest_attr[:-3]  # Remove the "..."
-                            longest_len = len(longest_attr)
+                        if intersected_measure > 0:  # Only include if there's actual intersection
+                            # Clean attribute values
+                            attrs = []
+                            for val in row[:-1]:
+                                if isinstance(val, datetime):
+                                    attrs.append(val.strftime('%Y-%m-%d'))
+                                else:
+                                    clean_val = str(val).replace("'", "").replace(",", ";").replace("\n","_n")
+                                    if len(clean_val) > 200:
+                                        clean_val = clean_val[:200] + "..."
+                                    attrs.append(clean_val)
+                            
+                            total_len = sum(len(attr) for attr in attrs) + 3 * (len(attrs) - 1)
 
-                        # Trim one character from longest attribute, then add the elipsis
-                        new_length = longest_len - 1
-                        attrs[longest_idx] = longest_attr[:new_length] + "..."
+                            while total_len > 200:
+                                # Find the longest attribute
+                                longest_idx = max(range(len(attrs)), key=lambda i: len(attrs[i]))
+                                longest_attr = attrs[longest_idx]
+                                longest_len = len(longest_attr)
+                                
+                                # Remove existing ellipsis if present
+                                if longest_attr.endswith("..."):
+                                    longest_attr = longest_attr[:-3]  # Remove the "..."
+                                    longest_len = len(longest_attr)
 
-                        # re-calculate total length
-                        total_len = sum(len(attr) for attr in attrs) + 3 * (len(attrs) - 1)
+                                # Trim one character from longest attribute, then add the elipsis
+                                new_length = longest_len - 1
+                                attrs[longest_idx] = longest_attr[:new_length] + "..."
 
-                    measure = row[-1]
-                    key = tuple(attrs)
-                    value_measures[key] = value_measures.get(key, 0) + measure
+                                # re-calculate total length
+                                total_len = sum(len(attr) for attr in attrs) + 3 * (len(attrs) - 1)
+                            
+                            key = tuple(attrs)
+                            value_measures[key] = value_measures.get(key, 0) + intersected_measure
+                        processed_count += 1
+                        
+                    except Exception as geom_error:
+                        self.logMessage('warn', f"Geometry processing error for feature {processed_count}: {str(geom_error)}")
+                        continue
             
             # Format results
             results = []
             for key, total_measure in value_measures.items():
-                measure_str = unit_conversion(total_measure)
-                results.append(list(key) + [measure_str])
+                if total_measure > 0:  # Only include non-zero measurements
+                    measure_str = unit_conversion(total_measure)
+                    results.append(list(key) + [measure_str])
             
             results.sort()
-            
-            # Clean up
-            arcpy.Delete_management(clip_name)
-
-            self.logMessage('info', f"{desc.baseName} {checktype} measure results: {len(results)} unique values")
-
+            self.logMessage('info', f"{desc.baseName} {checktype} measure results: {len(results)} unique values from {processed_count} features")
             return results
             
         except Exception as e:
-            self.logMessage('error', f"Error in get_values_areas: {str(e)}")
+            self.logMessage('error', f"Error in get_values_areas_no_clip: {str(e)}")
             return [[]]
     
     def format_presence_output(self, value_list: List[Any]) -> str:
@@ -442,7 +464,7 @@ class ValuesCheckTool:
                     # Check buffer if specified
                     if buffer_dist and buffer_dist > 0:
                         if def_query and len(def_query.strip()) > 1:
-                            # reset selection
+                            # reset selection - required because previous check may have reduced selection
                             theme_layer = arcpy.management.SelectLayerByAttribute(theme_path, "NEW_SELECTION", def_query)
                         else:
                             theme_layer = arcpy.management.SelectLayerByAttribute(theme_path, "CLEAR_SELECTION")
@@ -596,10 +618,16 @@ class ValuesCheckTool:
                 return field.type
         
         raise ValueError(f"Field '{self.id_field}' not found in {self.input_fc}")
-    
+
     def logMessage(self, type, message: str) -> None:
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        self.perf_log.write(f"{now} {message}\n")
+        try:
+            self.perf_log.write(f"{now} {message}\n")
+            self.perf_log.flush()
+        except Exception as e:
+            # Fallback if file writing fails
+            print(f"Log write error: {e}")
+        
         if type == "error":
             arcpy.AddError(message)
         elif type == "warn":
