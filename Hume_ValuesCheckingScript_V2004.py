@@ -3,13 +3,15 @@ ArcGIS Pro Toolbox Script - Values Check Tool
 Performs spatial analysis to check values intersecting with input features.
 Supports presence checks, counts, and area/length measurements with optional buffer zones.
 Author: 
-Date: 20250729
-Version: 2.0.0.5 (Refactored)
+Date: 20250730
+Version: 2.0.0.8 (Refactored)
 """
+
 import os
 import arcpy
 from datetime import datetime
-from typing import List, Tuple, Optional, Any
+from typing import List, Tuple, Any
+import gc
 
 #####################################################################################
 #           ADJUST THESE IF RUNNING OUTSIDE OF THE ARCGIS PRO TOOLBOX               #
@@ -18,9 +20,9 @@ from typing import List, Tuple, Optional, Any
 # Manual parameters - script will use these if arcpy.GetParameterAsText isn't found
 FEATURE_CLASS   = 'C:\\data\\daptest\\Hume_uploadtoVDP_20250718.gdb\\DAP_FINAL_AREA_20250718'             # Input Feature Class
 FEATURE_ID      = 'DAP_REF_NO'                                  # Feature ID Field
-THEME_REFTAB    = 'C:\\data\\daptest\\Single Report Tool\\Reference Tables\\reftables.gdb\\REFTABLE_INDIGENOUS_HERITAGE_ALL_RECORDS'  # Theme Reference Table
-GISPUB_LOCATION = 'C:\\data'                                    # CSDL Location
-OUT_PATH        = 'C:\\data\\20250709_hume_test'    # Output Path
+THEME_REFTAB    = 'C:\\data\\daptest\\Single Report Tool\\Reference Tables\\reftables.gdb\\REFTABLE_DAP_20250417'  # Theme Reference Table
+GISPUB_LOCATION = 'C:\\data'                                    # Local gis_public folder location
+OUT_PATH        = 'C:\\data\\20250709_hume_test'                # Output Path
 
 ######################################################################################
 ######################################################################################
@@ -32,6 +34,11 @@ class ValuesCheckTool:
                  csdl_location: str, output_path: str):
         """Initialize the tool with parameters."""
         self.input_fc = input_fc
+        self.buffer_cache = []
+        self.values_cache = []
+        self.buffer_cache = {}  # Changed to dict for O(1) lookup
+        self.values_cache = {}  # Changed to dict for O(1) lookup
+        self.layer_selections = {}  # Track layer selections for cleanup
         self.id_field = id_field
         self.ref_table = ref_table
         self.csdl_location = csdl_location
@@ -52,24 +59,15 @@ class ValuesCheckTool:
         
         
         sr = arcpy.SpatialReference(7899) # Set spatial reference to VICGRID2020
-        # sr = arcpy.SpatialReference(4283) # Set spatial reference to GDA94
         arcpy.env.outputCoordinateSystem = sr
         arcpy.env.cartographicCoordinateSystem = sr
+
+        # Disable spatial indexing during processing for better performance
+        arcpy.env.autoCommit = 1000  # Commit every 1000 operations
         
         # Create output directory and temp workspace
         os.makedirs(self.output_path, exist_ok=True)
-
-        """Create temporary geodatabase workspace."""
-        self.temp_gdb = os.path.join(self.output_path, "valuescheck_temp.gdb")
-        if arcpy.Exists(self.temp_gdb):
-            arcpy.Delete_management(self.temp_gdb)
-        
-        arcpy.CreateFileGDB_management(
-            self.output_path, "valuescheck_temp.gdb", "10.0"
-        )
-        arcpy.env.workspace = self.temp_gdb
-        
-        self.logMessage('info', f"Created temp workspace: {self.temp_gdb}")
+        arcpy.env.workspace = r"in_memory"
     
     @staticmethod
     def get_timestamp() -> str:
@@ -101,43 +99,65 @@ class ValuesCheckTool:
         
         return text
     
-    def create_buffer(self, geometry: str, buffer_dist: float) -> str:
-        """Create buffer around geometry, excluding internal area for polygons."""
-        desc = arcpy.Describe(geometry)
-        geometry_type = desc.shapeType.upper()
-        buffer_name = "currentFeature_buffer"
-       
-        if geometry_type == "POLYGON":
-            # If the feature is a polygon, create ring buffer
-            buffer_fc = arcpy.analysis.Buffer(
-                    in_features=geometry,
-                    out_feature_class=buffer_name,
-                    buffer_distance_or_field=f"{buffer_dist} meters",
-                    line_side="OUTSIDE_ONLY",
-                    line_end_type="ROUND",
-                    dissolve_option="NONE",
-                    dissolve_field=None,
-                    method="PLANAR"
-                )
-        else:
-            # Otherwise, create a regular buffer
-            buffer_fc = arcpy.analysis.Buffer(
-                    in_features=geometry,
-                    out_feature_class=buffer_name,
-                    buffer_distance_or_field=f"{buffer_dist} meters",
-                    line_side="FULL",
-                    line_end_type="ROUND",
-                    dissolve_option="NONE",
-                    dissolve_field=None,
-                    method="PLANAR"
-                )
-       
-        return buffer_fc
-    
+    @staticmethod
     def get_reporting_fields(self, field_list: List[str]) -> List[str]:
         """Filter out empty or null reporting fields."""
         return [field for field in field_list if field and field.strip()]
     
+    def cache_buffers(self, feature_class: str, buffer_distances: list) -> None:
+        """Create buffers around all feature classes for later re-use"""
+        
+        desc = arcpy.Describe(feature_class)
+
+        # Copy base features (unbuffered) unless it already exists in cache
+        name = desc.baseName
+        if name not in self.buffer_cache:
+            layer_name = f"{name}_{id(self)}"
+            arcpy.management.MakeFeatureLayer(feature_class, layer_name)
+            self.buffer_cache[name] = layer_name
+            self.layer_selections[layer_name] = None
+
+        # Create buffered features if requested, unless it already exists in cache
+        for distance in buffer_distances:
+            buffer_name = f"{desc.baseName}_{distance}"
+
+            if buffer_name not in self.buffer_cache:
+                geometry_type = desc.shapeType.upper()
+
+                if geometry_type == "POLYGON":
+                    side = "OUTSIDE_ONLY"
+                else:
+                    side = "FULL"
+
+                # Use in_memory workspace for buffers with unique naming
+                unique_suffix = id(self)
+                buffer_fc = f"in_memory\\{buffer_name}_{unique_suffix}"
+                layer_name = f"{buffer_name}_layer_{unique_suffix}"
+                
+                arcpy.analysis.Buffer(
+                        in_features=feature_class,
+                        out_feature_class=buffer_fc,
+                        buffer_distance_or_field=f"{distance} meters",
+                        line_side=side,
+                        line_end_type="ROUND",
+                        dissolve_option="NONE",
+                        dissolve_field=None,
+                        method="PLANAR"
+                    )
+
+                # Create layer from buffer
+                arcpy.management.MakeFeatureLayer(buffer_fc, layer_name)
+                self.buffer_cache[buffer_name] = layer_name
+                self.layer_selections[layer_name] = None
+    
+    def clear_layer_selections(self):
+        """Clear all layer selections to prevent memory buildup."""
+        for layer_name in self.layer_selections:
+            try:
+                arcpy.management.SelectLayerByAttribute(layer_name, "CLEAR_SELECTION")
+            except:
+                pass  # Layer might not exist anymore
+
     def get_values_present(self, input_feature: str, values_fc: str, checktype: str, *report_fields: str) -> List[List[str]]:
         """Get unique values present in intersecting features."""
         try:
@@ -182,7 +202,7 @@ class ValuesCheckTool:
             return results
             
         except Exception as e:
-            self.logMessage('error', f"Error in get_values_present_fast: {str(e)}")
+            self.logMessage('error', f"Error in get_values_present: {str(e)}")
             return [[]]
     
     def get_values_count(self, input_feature: str, values_fc: str, checktype: str, *report_fields: str) -> List[List[Any]]:
@@ -267,15 +287,24 @@ class ValuesCheckTool:
             if geometry_type == "POLYGON":
                 measure_field = "SHAPE@"
                 def calculate_measure(geom):
-                    intersected = geom.intersect(input_geom, 4)  # 4 = esriGeometryIntersection
-                    return intersected.getArea() if intersected else 0
+                    intersected = geom.intersect(input_geom, dimension=4)  # 4 = polygon intersection
+                    if intersected:
+                        return intersected.getArea()
+                    return 0
+
                 unit_conversion = lambda x: f"{x / 10000:.1f}ha"
+
             elif geometry_type == "POLYLINE":
                 measure_field = "SHAPE@"
                 def calculate_measure(geom):
-                    intersected = geom.intersect(input_geom, 4)  # 4 = esriGeometryIntersection
-                    return intersected.getLength if intersected else 0
+                    intersected = geom.intersect(input_geom, dimension=2) # 2 = line intersection 
+                    if intersected and intersected.type in ["polyline", "multipart"]:
+                        length = intersected.getLength()
+                        return length if length is not None else 0
+                    return 0
+                            
                 unit_conversion = lambda x: f"{x / 1000:.3f}km"
+
             else:
                 self.logMessage('error', f"Unsupported geometry type: {geometry_type}")
                 return [[]]
@@ -415,12 +444,10 @@ class ValuesCheckTool:
             # Write feature name to output
             output_file.write(str(feature_name))
             
-            # Clean up any existing current feature
-            if arcpy.Exists("currentFeature"):
-                arcpy.Delete_management("currentFeature")
-            
-            # Select current feature
-            current_feature = arcpy.management.SelectLayerByAttribute(self.input_fc, "NEW_SELECTION", expression)
+            # Select current feature from buffer cache
+            feature_class = self.get_basename(self.input_fc)
+            feature_layer = self.buffer_cache[feature_class]
+            current_feature = arcpy.management.SelectLayerByAttribute(feature_layer, "NEW_SELECTION", expression)
             
             # Process each theme in reference table
             theme_fields = [
@@ -431,26 +458,26 @@ class ValuesCheckTool:
             
             with arcpy.da.SearchCursor(self.ref_table, theme_fields) as cursor:
                 for row in cursor:
-                    if row[0].upper() != "Y":  # Skip if CHECK_YN != "Y"
+                    (requires_check, default_ws, location, gdb_name, fc_name, 
+                        query, method, repfld1, repfld2, repfld3, repfld4, 
+                        buffer_distance) = row
+
+                    if requires_check.upper() != "Y":  # Skip if CHECK_YN != "Y"
                         continue
                     
-                    # Get theme data location
-                    if row[1].upper() == "Y":  # DEFAULTWS_YN
-                        theme_path = os.path.join(self.csdl_location, row[2], row[3], row[4])
-                    else:
-                        theme_path = row[2]  # DATA_LOC
-                    
+                    # Get theme data from cache
+                    theme_layer = self.values_cache[fc_name]
+
                     # Apply definition query if specified
-                    def_query = row[5]  # DEF_QUERY
-                    if def_query and len(def_query.strip()) > 1:
-                        theme_layer = arcpy.management.SelectLayerByAttribute(theme_path, "NEW_SELECTION", def_query)
+                    if query and len(query.strip()) > 1:
+                        # theme_layer = arcpy.management.SelectLayerByAttribute(theme_layer, "NEW_SELECTION", query)
+                        arcpy.management.SelectLayerByAttribute(theme_layer, "NEW_SELECTION", query)
                     else:
-                        theme_layer = arcpy.management.SelectLayerByAttribute(theme_path, "CLEAR_SELECTION")
+                        # theme_layer = arcpy.management.SelectLayerByAttribute(theme_layer, "CLEAR_SELECTION")
+                        arcpy.management.SelectLayerByAttribute(theme_layer, "CLEAR_SELECTION")
                     
                     # Get method and reporting fields
-                    method = row[6]  # CHECK_METHOD
-                    reporting_fields = row[7:11]  # REPFLD1-4
-                    buffer_dist = row[11]  # BUFFER_DIST
+                    reporting_fields = [repfld1, repfld2, repfld3, repfld4]
                     
                     # Get appropriate functions
                     check_func, format_func = self.get_method_functions(method)
@@ -462,24 +489,39 @@ class ValuesCheckTool:
                     self._write_results(output_file, results, format_func)
                     
                     # Check buffer if specified
-                    if buffer_dist and buffer_dist > 0:
-                        if def_query and len(def_query.strip()) > 1:
-                            # reset selection - required because previous check may have reduced selection
-                            theme_layer = arcpy.management.SelectLayerByAttribute(theme_path, "NEW_SELECTION", def_query)
+                    if buffer_distance and buffer_distance > 0:
+                        buffer_name = f"{feature_class}_{buffer_distance}"
+                        buffer_layer = self.buffer_cache[buffer_name]
+                        buffer_feature = arcpy.management.SelectLayerByAttribute(buffer_layer, "NEW_SELECTION", expression)
+
+                        # reset selection - required because previous check may have reduced selection
+                        if query and len(query.strip()) > 1:
+                            # theme_layer = arcpy.management.SelectLayerByAttribute(theme_layer, "NEW_SELECTION", query)
+                            arcpy.management.SelectLayerByAttribute(theme_layer, "NEW_SELECTION", query)
                         else:
-                            theme_layer = arcpy.management.SelectLayerByAttribute(theme_path, "CLEAR_SELECTION")
-                        self._process_buffer(current_feature, theme_layer, buffer_dist, 
+                            # theme_layer = arcpy.management.SelectLayerByAttribute(theme_layer, "CLEAR_SELECTION")
+                            arcpy.management.SelectLayerByAttribute(theme_layer, "CLEAR_SELECTION")
+                        self._process_buffer(buffer_feature, theme_layer, buffer_distance, 
                             check_func, format_func, output_file, results, *reporting_fields)
             
             # Finish the row
             output_file.write("\n")
+
+            # Periodic cleanup every 100 features
+            if self.counter % 100 == 0:
+                self.clear_layer_selections()
+                gc.collect()  # Force garbage collection
+                self.logMessage('info', f"\nPeriodic cleanup completed at feature {self.counter}")
             
             # Clear selection
-            arcpy.SelectLayerByAttribute_management(self.input_fc, "CLEAR_SELECTION")
+            # arcpy.SelectLayerByAttribute_management(self.input_fc, "CLEAR_SELECTION")
             
         except Exception as e:
             self.logMessage('error', f"Error processing feature {feature_name}: {str(e)}")
             output_file.write(",Error occurred\n")
+
+        finally:
+            self.clear_layer_selections()
     
     def _write_results(self, output_file: Any, results: List[List[Any]], 
                       format_func: callable) -> None:
@@ -504,17 +546,14 @@ class ValuesCheckTool:
             else:
                 output_file.write(',="Nil features"')
     
-    def _process_buffer(self, current_feature: str, theme_layer: str, 
+    def _process_buffer(self, buffer_feature: str, theme_layer: str, 
                        buffer_dist: float, check_func: callable, 
                        format_func: callable, output_file: Any, 
                        main_results: List[List[Any]],
                        *reporting_fields: str) -> None:
         """Process buffer area around feature."""
         try:
-            
-            # Create buffer
-            buffer_feature = self.create_buffer(current_feature, buffer_dist)
-            
+           
             # Check values in buffer
             buffer_results = check_func(buffer_feature, theme_layer, f"{buffer_dist}m buffer", *reporting_fields) 
             
@@ -574,6 +613,45 @@ class ValuesCheckTool:
                     0, len(feature_list), 1
                 )
                 
+                # Pre-cache and buffer feature class; pre-cache values layers
+                theme_fields = [
+                    "CHECK_YN", "DEFAULTWS_YN", "DATA_LOC", "GDB_NAME", "FC_NAME",
+                    "DEF_QUERY", "CHECK_METHOD", "REPFLD1", "REPFLD2", "REPFLD3", 
+                    "REPFLD4", "BUFFER_DIST"
+                ]
+                
+                buffer_distances = []
+                with arcpy.da.SearchCursor(self.ref_table, theme_fields) as cursor:
+                    for row in cursor:
+                        (requires_check, default_ws, location, gdb_name, fc_name, 
+                         query, method, repfld1, repfld2, repfld3, repfld4, 
+                         buffer_distance) = row
+
+                        if requires_check.upper() != "Y":  # Skip if CHECK_YN != "Y"
+                            continue
+                        
+                        if default_ws.upper() == "Y": 
+                            theme_path = os.path.join(self.csdl_location, location, gdb_name, fc_name)
+                        else:
+                            theme_path = location  # DATA_LOC
+                        
+                        # Cache values layer with unique name
+                        if fc_name not in self.values_cache:
+                            layer_name = f"{fc_name}_{id(self)}"
+                            arcpy.management.MakeFeatureLayer(theme_path, layer_name)
+                            self.values_cache[fc_name] = layer_name
+                            self.layer_selections[layer_name] = None
+                            self.logMessage('info', f"Cached {fc_name}")
+
+                        # Add buffer distance to list if required
+                        if buffer_distance not in buffer_distances and buffer_distance > 0:
+                            buffer_distances.append(buffer_distance)
+                        
+                self.logMessage('info', f"Caching {self.input_fc} and {len(buffer_distances)} buffers")
+                
+                self.cache_buffers(self.input_fc, buffer_distances)
+
+
                 # Process each feature
                 for feature_name in feature_list:
                     self.process_feature(feature_name, field_type, output_file)
