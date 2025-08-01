@@ -145,6 +145,7 @@ class ValuesCheckTool:
                     row_data.append(value_string)
                 
                 # write row to output CSV
+                self.logMessage('info', f"Row {feature_id} written to CSV") 
                 self.writer.writerow(row_data)
 
             self.output_csv.close()
@@ -166,12 +167,17 @@ class ValuesCheckTool:
                 "buff": (list_buff, attrs_buff)
             }
             
-            for location in ["poly", "buff"]:
+            if buffer_distance > 0:
+                locations = ["poly", "buff"]
+            else:
+                locations = ["poly"]
+
+            for location in locations:
 
                 input, output = data_mapping[location]
 
-                # Handle situation where no values exist
-                if not input:
+                # Handle situation where no values exist or all values are empty
+                if not any(input):
                     output.append("Nil") # populate with string "Nil" if list empty
                 else:
                     for value in input:   
@@ -193,7 +199,6 @@ class ValuesCheckTool:
                                 val_str = str(value[0])
                         elif method.upper() == "MEASURE":
                             # Format as: "first (second | third) - measure"
-
                             if geometry_type == "POLYGON":
                                 meas_str = "ha"
                             elif geometry_type == "POLYLINE":
@@ -210,10 +215,6 @@ class ValuesCheckTool:
                             else:
                                 val_str = str(value[0])
                         output.append(val_str)
-
-            # Calculate total length and truncate if needed
-            total_len = sum(len(attr) for attr in attrs_poly) + len(attrs_poly) * 3 + \
-                        sum(len(attr) for attr in attrs_buff) + len(attrs_buff) * 3
 
             # if theme has a buffer, format with 'Inside feature:' and 'In XXXm buffer:'
             if buffer_distance > 0:
@@ -254,11 +255,6 @@ class ValuesCheckTool:
                 if field and field.strip():  # ignore if empty
                     rpt_fields.append(field)
             query = fc_dict["definition_query"]
-
-            # apply definition query to values feature class
-            # arcpy.management.SelectLayerByAttribute(values_fc, "CLEAR_SELECTION")
-            # if query and query != "":
-            #     arcpy.management.SelectLayerByAttribute(values_fc, "NEW_SELECTION", query)
 
             # Get the base works feature class (unbuffered)
             works_base_name = os.path.basename(self.input_fc).split('.')[0]  # Extract base name from input_fc
@@ -317,12 +313,12 @@ class ValuesCheckTool:
             if query and query != "":
                 arcpy.management.SelectLayerByAttribute(values_fc, "NEW_SELECTION", query)
 
-            # Perform spatial selection between 
+            # Perform spatial selection between works and values
             intersecting_values = arcpy.management.SelectLayerByLocation(
                 in_layer=values_fc,
                 overlap_type="INTERSECT",
                 select_features=works_fc,
-                selection_type="NEW_SELECTION"
+                selection_type="SUBSET_SELECTION"
             )
 
             # Check what sort of geometry we're looking at
@@ -345,9 +341,6 @@ class ValuesCheckTool:
             # Use one-to-many join so we can process all works at once
             arcpy.analysis.Intersect([works_fc, intersecting_values], joined_fc)
             intersected_count = int(arcpy.management.GetCount(joined_fc)[0])
-            # if intersected_count == 0:
-            #     self.logMessage('info', f"No intersections found for {fc_name} ({location_type})")
-            #     return
 
             # Step through each row in the join and add to output dictionary if it doesn't already exist
             with arcpy.da.SearchCursor(joined_fc, out_fields) as cursor:
@@ -357,9 +350,8 @@ class ValuesCheckTool:
                     # process attributes, cleaning up as we go
                     row_list = []
 
-                    for val in row[2:]:  # Skip index 0 and 1
-                        if val is not None and val != " ":
-                            # row_list.append("")  # Handle None values explicitly
+                    for val in row[2:]:  # Skip index 0 and 1 (shape & id)
+                        if val and val != " ":
                             if isinstance(val, datetime):
                                 row_list.append(val.strftime('%Y-%m-%d'))
                             else:
