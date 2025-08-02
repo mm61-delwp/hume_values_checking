@@ -186,7 +186,7 @@ class ValuesCheckTool:
                             # Format as: "first (second | third | fourth)"
                             if len(value) > 1:
                                 val_str = f"{value[0]} ({' | '.join(map(str, value[1:]))})"
-                            elif value[0]:
+                            elif any(value):
                                 val_str = str(value[0])
                         elif method.upper() == "COUNT":
                             # Format as: "first (second | third) - count"
@@ -196,7 +196,7 @@ class ValuesCheckTool:
                                     val_str = f"{value[0]} ({' | '.join(map(str, value[1:-1]))}) - {count}"
                                 else:
                                     val_str = f"{value[0]} - {count}"
-                            elif value[0]:
+                            elif any(value):
                                 val_str = str(value[0])
                         elif method.upper() == "MEASURE":
                             # Format as: "first (second | third) - measure"
@@ -213,7 +213,7 @@ class ValuesCheckTool:
                                     val_str = f"{value[0]} ({' | '.join(map(str, value[1:-1]))}) - {measure:.1f}{meas_str}"
                                 else:
                                     val_str = f"{value[0]} - {measure:.1f}{meas_str}"
-                            elif value[0]:
+                            elif any(value):
                                 val_str = str(value[0])
                         output.append(val_str)
 
@@ -283,7 +283,6 @@ class ValuesCheckTool:
                 # Process direct intersections (polygon to polygon/point/line)
                 self._process_spatial_intersection(buffered_works_fc, values_fc, fc_name, "in_buffer", rpt_fields)
 
-            #self.logMessage('info', f"Completed processing intersections for {fc_name}")
             self.counter += 1
 
         except Exception as e:
@@ -314,24 +313,30 @@ class ValuesCheckTool:
             if query and query != "":
                 arcpy.management.SelectLayerByAttribute(values_fc, "NEW_SELECTION", query)
 
-            # Perform spatial selection between works and values
-            intersecting_values = arcpy.management.SelectLayerByLocation(
-                in_layer=values_fc,
-                overlap_type="INTERSECT",
-                select_features=works_fc,
-                selection_type="SUBSET_SELECTION"
-            )
+            # # Perform spatial selection between works and values
+            # intersecting_values = arcpy.management.SelectLayerByLocation(
+            #     in_layer=values_fc,
+            #     overlap_type="INTERSECT",
+            #     select_features=works_fc,
+            #     selection_type="SUBSET_SELECTION"
+            # )
 
             # Check what sort of geometry we're looking at
             desc = arcpy.Describe(values_fc)
             geometry_type = desc.shapeType.upper()
             
             # Get count of selected features
-            selected_count = int(arcpy.management.GetCount(intersecting_values)[0])
+            # selected_count = int(arcpy.management.GetCount(intersecting_values)[0])
             
-            if selected_count == 0:
-                self.logMessage('info', f"No intersections found for {fc_name} ({location_type})")
-                return
+            # make string for message logging
+            if location_type == "in_polygon" then
+                msg_string = f"between {fc_name} and works polygons (method = {measure})"
+            else:
+                msg_string = f"between{fc_name} and {buffer_distance}m works buffer (method = {measure})"
+
+            # if selected_count == 0:
+            #     self.logMessage('info', f"No intersections found {msg_string}")
+            #     return
 
             # add works feature identifier and shape to report fields
             out_fields = ["SHAPE@", FEATURE_ID] + rpt_fields
@@ -340,8 +345,11 @@ class ValuesCheckTool:
             joined_fc = f"in_memory\\temporary_joined_data"
             
             # Use one-to-many join so we can process all works at once
-            arcpy.analysis.Intersect([works_fc, intersecting_values], joined_fc)
+            arcpy.analysis.Intersect([works_fc, values_fc], joined_fc)
             intersected_count = int(arcpy.management.GetCount(joined_fc)[0])
+            if intersected_count == 0:
+                self.logMessage('info', f"No intersections found {msg_string}")
+                return
 
             # Step through each row in the join and add to output dictionary if it doesn't already exist
             with arcpy.da.SearchCursor(joined_fc, out_fields) as cursor:
@@ -349,7 +357,7 @@ class ValuesCheckTool:
                     shape = row[0]
                     works_feature_id = row[1]
 
-                    # process attributes, cleaning up as we go
+                    # process individual reporting fields identified in reference table
                     field_values = []
 
                     # some clean up - this needs to be thorough to ensure later robustness
@@ -366,12 +374,11 @@ class ValuesCheckTool:
                         str_val = str(str_val).replace("'", "").replace(",", ";").replace("\n", "_n")
                         
                         # skip if empty or any variety of no-value
-                        if not str_val or str_val.lower() in ['none', 'null', 'nan']:
-                            continue
+                        if str_val and str_val.lower() not in ['none', 'null', 'nan', '']:
+                            # reduce to max 40 characters and add to list of 
+                            field_values.append(str_val[:40])
                         
-                        # reduce to max 40 characters and add to list of 
-                        field_values.append(str_val[:40])
-                    
+                    # add reporting fields (plus count/measure if req.) to output dictionar, as a LIST                    
                     if method.upper() == "PRESENT":
                         # if matching item doesn't exist, add to output dictionary
                         if field_values not in self.output_dict[works_feature_id][theme_name][location_type]:
@@ -418,7 +425,7 @@ class ValuesCheckTool:
                 if arcpy.Exists(joined_fc):
                     arcpy.Delete_management(joined_fc)
             
-            self.logMessage('info', f"Processed {intersected_count} intersections for {fc_name} ({location_type})")
+            self.logMessage('info', f"Processed {intersected_count} {msg_string}")
             
         except Exception as e:
             self.logMessage('error', f"Error in spatial intersection processing: {str(e)}")
