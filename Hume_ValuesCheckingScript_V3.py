@@ -12,7 +12,6 @@ import arcpy
 from datetime import datetime
 from typing import List, Tuple, Any
 import csv
-import gc
 
 #####################################################################################
 #           ADJUST THESE IF RUNNING OUTSIDE OF THE ARCGIS PRO TOOLBOX               #
@@ -47,7 +46,6 @@ class ValuesCheckTool:
         # Initialise dictionaries
         self.buffer_cache = {}
         self.values_cache = {}
-        self.layer_selections = {}  # Track layer selections for cleanup
         self.reftab_dict = {}
         self.output_dict = {}
         
@@ -313,30 +311,15 @@ class ValuesCheckTool:
             if query and query != "":
                 arcpy.management.SelectLayerByAttribute(values_fc, "NEW_SELECTION", query)
 
-            # # Perform spatial selection between works and values
-            # intersecting_values = arcpy.management.SelectLayerByLocation(
-            #     in_layer=values_fc,
-            #     overlap_type="INTERSECT",
-            #     select_features=works_fc,
-            #     selection_type="SUBSET_SELECTION"
-            # )
-
             # Check what sort of geometry we're looking at
             desc = arcpy.Describe(values_fc)
             geometry_type = desc.shapeType.upper()
-            
-            # Get count of selected features
-            # selected_count = int(arcpy.management.GetCount(intersecting_values)[0])
             
             # make string for message logging
             if location_type == "in_polygon":
                 msg_string = f"between {fc_name} and works polygons ({method})"
             else:
                 msg_string = f"between {fc_name} and {buffer_distance}m works buffer ({method})"
-
-            # if selected_count == 0:
-            #     self.logMessage('info', f"No intersections found {msg_string}")
-            #     return
 
             # add works feature identifier and shape to report fields
             out_fields = ["SHAPE@", FEATURE_ID] + rpt_fields
@@ -375,8 +358,8 @@ class ValuesCheckTool:
                         
                         # skip if empty or any variety of no-value
                         if str_val and str_val.lower() not in ['none', 'null', 'nan', '']:
-                            # reduce to max 40 characters and add to list of 
-                            field_values.append(str_val[:40])
+                            # reduce to max 50 characters and add to list field data 
+                            field_values.append(str_val[:50])
                         
                     # add reporting fields (plus count/measure if req.) to output dictionar, as a LIST                    
                     if method.upper() == "PRESENT":
@@ -488,7 +471,6 @@ class ValuesCheckTool:
                 layer_name = f"{name}_{id(self)}"
                 arcpy.management.MakeFeatureLayer(feature_class, layer_name)
                 self.buffer_cache[name] = layer_name
-                self.layer_selections[layer_name] = None
 
             # Create buffered features if requested, unless it already exists in cache
             for distance in buffer_distances:
@@ -521,7 +503,6 @@ class ValuesCheckTool:
                     # Create layer from buffer
                     arcpy.management.MakeFeatureLayer(buffer_fc, layer_name)
                     self.buffer_cache[buffer_name] = layer_name
-                    self.layer_selections[layer_name] = None
 
             self.logMessage('info', f"Cached {feature_class} and {len(buffer_distances)} buffers")
 
@@ -565,7 +546,6 @@ class ValuesCheckTool:
                             layer_name = f"{fc_name}_{id(self)}"
                             arcpy.management.MakeFeatureLayer(values_fc_path, layer_name)
                             self.values_cache[fc_name] = layer_name
-                            self.layer_selections[layer_name] = None
                             self.logMessage('info', f"Cached {fc_name}")
 
                         # determine geometry type
