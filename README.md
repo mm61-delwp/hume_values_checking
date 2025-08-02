@@ -75,7 +75,6 @@ The tool requires a reference table with the following fields:
 
 ### Analysis Methods
 The format of returned data is determined by the analysis method provided in the reference table's CHECK_METHOD field.
-
 ##### PRESENT
 Checks for the presence of intersecting features and reports their attribute values. Duplicate values are discarded.  
 **Output format:** `"Primary Value (Secondary | Tertiary | Additional)"`
