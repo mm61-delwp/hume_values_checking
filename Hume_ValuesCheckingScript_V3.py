@@ -330,9 +330,9 @@ class ValuesCheckTool:
             
             # make string for message logging
             if location_type == "in_polygon":
-                msg_string = f"between {fc_name} and works polygons (method = {method})"
+                msg_string = f"between {fc_name} and works polygons ({method})"
             else:
-                msg_string = f"between{fc_name} and {buffer_distance}m works buffer (method = {method})"
+                msg_string = f"between {fc_name} and {buffer_distance}m works buffer ({method})"
 
             # if selected_count == 0:
             #     self.logMessage('info', f"No intersections found {msg_string}")
@@ -425,7 +425,7 @@ class ValuesCheckTool:
                 if arcpy.Exists(joined_fc):
                     arcpy.Delete_management(joined_fc)
             
-            self.logMessage('info', f"Processed {intersected_count} {msg_string}")
+            self.logMessage('info', f"Processed {intersected_count} intersections {msg_string}")
             
         except Exception as e:
             self.logMessage('error', f"Error in spatial intersection processing: {str(e)}")
