@@ -145,7 +145,6 @@ class ValuesCheckTool:
                     row_data.append(value_string)
                 
                 # write row to output CSV
-                self.logMessage('info', f"Row {feature_id} written to CSV") 
                 self.writer.writerow(row_data)
 
             self.output_csv.close()
@@ -182,10 +181,12 @@ class ValuesCheckTool:
                 else:
                     for value in input:   
                         if method.upper() == "PRESENT":
+                            # set default value string
+                            val_str = "Nil"
                             # Format as: "first (second | third | fourth)"
                             if len(value) > 1:
                                 val_str = f"{value[0]} ({' | '.join(map(str, value[1:]))})"
-                            else:
+                            elif value[0]:
                                 val_str = str(value[0])
                         elif method.upper() == "COUNT":
                             # Format as: "first (second | third) - count"
@@ -195,7 +196,7 @@ class ValuesCheckTool:
                                     val_str = f"{value[0]} ({' | '.join(map(str, value[1:-1]))}) - {count}"
                                 else:
                                     val_str = f"{value[0]} - {count}"
-                            else:
+                            elif value[0]:
                                 val_str = str(value[0])
                         elif method.upper() == "MEASURE":
                             # Format as: "first (second | third) - measure"
@@ -212,7 +213,7 @@ class ValuesCheckTool:
                                     val_str = f"{value[0]} ({' | '.join(map(str, value[1:-1]))}) - {measure:.1f}{meas_str}"
                                 else:
                                     val_str = f"{value[0]} - {measure:.1f}{meas_str}"
-                            else:
+                            elif value[0]:
                                 val_str = str(value[0])
                         output.append(val_str)
 
@@ -347,54 +348,71 @@ class ValuesCheckTool:
                 for row in cursor:
                     shape = row[0]
                     works_feature_id = row[1]
-                    # process attributes, cleaning up as we go
-                    row_list = []
 
-                    for val in row[2:]:  # Skip index 0 and 1 (shape & id)
-                        if val and val != " ":
-                            if isinstance(val, datetime):
-                                row_list.append(val.strftime('%Y-%m-%d'))
-                            else:
-                                # Clean string representation
-                                clean_val = str(val).replace("'", "").replace(",", ";").replace("\n", "_n")
-                                row_list.append(clean_val[:40])
+                    # process attributes, cleaning up as we go
+                    field_values = []
+
+                    # some clean up - this needs to be thorough to ensure later robustness
+                    for field_value in row[2:]:  # Skip index 0 and 1 (shape & id)
+                        
+                        if isinstance(field_value, datetime):
+                            # if date & time, convert to simplified date string
+                            str_val = field_value.strftime('%Y-%m-%d')
+                        else:
+                            # make sure value is string and remove leading/trailing spaces 
+                            str_val = str(field_value).strip()
+
+                        # remove any CSV-breaking elements
+                        str_val = str(str_val).replace("'", "").replace(",", ";").replace("\n", "_n")
+                        
+                        # skip if empty or any variety of no-value
+                        if not str_val or str_val.lower() in ['none', 'null', 'nan']:
+                            continue
+                        
+                        # reduce to max 40 characters and add to list of 
+                        field_values.append(str_val[:40])
                     
                     if method.upper() == "PRESENT":
-                        # Add to output dictionary unless it already exists
-                        if row_list not in self.output_dict[works_feature_id][theme_name][location_type]:
-                            self.output_dict[works_feature_id][theme_name][location_type].append(row_list)
+                        # if matching item doesn't exist, add to output dictionary
+                        if field_values not in self.output_dict[works_feature_id][theme_name][location_type]:
+                            self.output_dict[works_feature_id][theme_name][location_type].append(field_values)
                     elif method.upper() == "COUNT":
-                        # Check if this row_list already exists in the list
+                        
                         found = False
+                        # if matching item already exists, increment its count field
                         for existing_entry in self.output_dict[works_feature_id][theme_name][location_type]:
-                            # Compare everything except the last element (which is the count)
-                            if existing_entry[:-1] == row_list: # Found a match - increment the count
+                            # compare everything except the last element (which is the count)
+                            if existing_entry[:-1] == field_values: # Found a match - increment the count
                                 existing_entry[-1] += 1
                                 found = True
                                 break
-                        
-                        if not found:           # New entry - add with count of 1
-                            row_list.append(1)  # Add count as last element
-                            self.output_dict[works_feature_id][theme_name][location_type].append(row_list)
+
+                        # if matching item doesn't exist, add to output dictionary with a count of 1
+                        if not found:
+                            field_values.append(1)  # Add count as last element
+                            self.output_dict[works_feature_id][theme_name][location_type].append(field_values)
 
                     elif method.upper() == "MEASURE":
+
+                        # determine how to calculate the measure field (area or length)
                         if geometry_type == "POLYGON":
                             measure = shape.area/10000  # Area in hectares
                         elif geometry_type == "POLYLINE":
                             measure = shape.length/1000   # Length in kilometers
 
-                        # Check if this row_list already exists in the list
                         found = False
+                        # if matching item already exists, add to its measure field
                         for existing_entry in self.output_dict[works_feature_id][theme_name][location_type]:
-                            # Compare everything except the last element (which is the measure)
-                            if existing_entry[:-1] == row_list: # Found a match - increment the measure
+                            # compare everything except the last element (which is the measure)
+                            if existing_entry[:-1] == field_values: # Found a match - increment the measure
                                 existing_entry[-1] += measure
                                 found = True
                                 break
                         
-                        if not found:           # New entry - add with measure
-                            row_list.append(measure)  # Add measure as last element
-                            self.output_dict[works_feature_id][theme_name][location_type].append(row_list)
+                        # if matching item doesn't exist, add to output dictionary and populate measure field
+                        if not found:
+                            field_values.append(measure)  # Add measure as last element
+                            self.output_dict[works_feature_id][theme_name][location_type].append(field_values)
 
                 # Clean up temporary feature class
                 if arcpy.Exists(joined_fc):
