@@ -281,8 +281,6 @@ class ValuesCheckTool:
                 # Process direct intersections (polygon to polygon/point/line)
                 self._process_spatial_intersection(buffered_works_fc, values_fc, fc_name, "in_buffer", rpt_fields)
 
-            self.counter += 1
-
         except Exception as e:
             self.logMessage('error', f"Error processing intersections for {fc_name}: {str(e)}")
 
@@ -566,7 +564,7 @@ class ValuesCheckTool:
                             "repfld4": repfld4
                         }
 
-            self.logMessage('info', f"\nBuffered {len(self.ref_table)} values layers")
+            self.logMessage('info', f"Buffered {len(self.ref_table)} values layers")
 
         except Exception as e:
             self.logMessage('error', f"Error while loading values feature classes: {str(e)}")
@@ -599,7 +597,7 @@ class ValuesCheckTool:
             arcpy.AddMessage(message)
 
 if __name__ == "__main__":
-    
+
     # Get parameters from ArcGIS Pro tool interface
     input_fc    = arcpy.GetParameterAsText(0) or FEATURE_CLASS   # Input Feature Class
     id_field    = arcpy.GetParameterAsText(1) or FEATURE_ID      # Feature ID Field
