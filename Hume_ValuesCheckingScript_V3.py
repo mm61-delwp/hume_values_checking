@@ -48,10 +48,6 @@ class ValuesCheckTool:
         self.values_cache = {}
         self.reftab_dict = {}
         self.output_dict = {}
-        
-        # May not need these - we'll see!
-        self.temp_gdb = None
-        self.counter = 0
 
         # Set up performance logging
         perf_log_path = os.path.join(self.output_path, f"{self.get_timestamp()}_script_performance.txt")
@@ -73,8 +69,8 @@ class ValuesCheckTool:
         
     def run(self) -> None:
         """Execute the main values checking process."""
+
         try:
-            
             self.logMessage('info', f"\nStarting values checking for {self.get_basename(self.input_fc)}")
 
             # STEP 1. Cache values feature classes and adds details to reftab_dict
@@ -94,14 +90,11 @@ class ValuesCheckTool:
             # STEP 5. Create output report
             self.data_to_csv()
 
-            self.logMessage('info', f"\nScript completed. Total values layers processed: {self.counter}")
+            self.logMessage('info', f"\nScript completed. Total values layers processed: {len(self.reftab_dict)}")
             
         except Exception as e:
             self.logMessage('error', f"Error in main execution: {str(e)}")
             raise
-        
-        finally:
-            self._cleanup()
     
     def data_to_csv(self) -> None:
         """
@@ -176,7 +169,6 @@ class ValuesCheckTool:
                 locations = ["poly"]
 
             for location in locations:
-
                 input, output = data_mapping[location]
 
                 # Handle situation where no values exist or all values are empty
@@ -264,7 +256,7 @@ class ValuesCheckTool:
             query = fc_dict["definition_query"]
 
             # Get the base works feature class (unbuffered)
-            works_base_name = os.path.basename(self.input_fc).split('.')[0]  # Extract base name from input_fc
+            works_base_name = self.get_basename(self.input_fc)
             works_fc = self.buffer_cache.get(works_base_name)
 
             # log error if unfound
@@ -369,8 +361,8 @@ class ValuesCheckTool:
                         # if matching item doesn't exist, add to output dictionary
                         if field_values not in self.output_dict[works_feature_id][theme_name][location_type]:
                             self.output_dict[works_feature_id][theme_name][location_type].append(field_values)
+                    
                     elif method.upper() == "COUNT":
-                        
                         found = False
                         # if matching item already exists, increment its count field
                         for existing_entry in self.output_dict[works_feature_id][theme_name][location_type]:
@@ -386,15 +378,14 @@ class ValuesCheckTool:
                             self.output_dict[works_feature_id][theme_name][location_type].append(field_values)
 
                     elif method.upper() == "MEASURE":
-
                         # determine how to calculate the measure field (area or length)
                         if geometry_type == "POLYGON":
                             measure = shape.area/10000  # Area in hectares
                         elif geometry_type == "POLYLINE":
                             measure = shape.length/1000   # Length in kilometers
 
-                        found = False
                         # if matching item already exists, add to its measure field
+                        found = False
                         for existing_entry in self.output_dict[works_feature_id][theme_name][location_type]:
                             # compare everything except the last element (which is the measure)
                             if existing_entry[:-1] == field_values: # Found a match - increment the measure
@@ -522,17 +513,14 @@ class ValuesCheckTool:
         """
 
         try:
-
             self.logMessage('info', f"\nBuffering values layers, please be patient...")
 
             # Create empty dictionary
             self.reftab_dict = {}
 
             # Populate dictionary from reference table
-            theme_fields = [
-                "THEMENAME", "CHECK_YN", "DEFAULTWS_YN", "DATA_LOC", "GDB_NAME", "FC_NAME",
-                "DEF_QUERY", "CHECK_METHOD", "REPFLD1", "REPFLD2", "REPFLD3", "REPFLD4", "BUFFER_DIST"
-            ]
+            theme_fields = ["THEMENAME", "CHECK_YN", "DEFAULTWS_YN", "DATA_LOC", "GDB_NAME", "FC_NAME",
+                "DEF_QUERY", "CHECK_METHOD", "REPFLD1", "REPFLD2", "REPFLD3", "REPFLD4", "BUFFER_DIST"]
             
             with arcpy.da.SearchCursor(reftab, theme_fields) as cursor:
                 for row in cursor:
@@ -593,11 +581,6 @@ class ValuesCheckTool:
     def get_basename(filepath: str) -> str:
         """Extract basename from file path without extension."""
         return os.path.splitext(os.path.basename(filepath))[0]
-    
-    @staticmethod
-    def get_reporting_fields(self, field_list: List[str]) -> List[str]:
-        """Filter out empty or null reporting fields."""
-        return [field for field in field_list if field and field.strip()]
 
     def logMessage(self, type, message: str) -> None:
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -615,30 +598,8 @@ class ValuesCheckTool:
         else:
             arcpy.AddMessage(message)
 
-    def _cleanup(self) -> None:
-        """Clean up temporary files and workspace."""
-        try:
-            if self.temp_gdb and arcpy.Exists(self.temp_gdb):
-                # Clean up any remaining feature classes
-                arcpy.env.workspace = self.temp_gdb
-                temp_fcs = arcpy.ListFeatureClasses()
-                for fc in temp_fcs:
-                    try:
-                        arcpy.Delete_management(fc)
-                    except:
-                        pass  # Continue cleanup even if individual deletions fail
-                
-                # Delete the temporary geodatabase
-                try:
-                    arcpy.Delete_management(self.temp_gdb)
-                    self.logMessage('info', "Temporary workspace cleaned up")
-                except:
-                    self.logMessage('warn', f"Could not delete temporary workspace: {self.temp_gdb}")
-                    
-        except Exception as e:
-            self.logMessage('warn', f"Error during cleanup: {str(e)}")
-
 if __name__ == "__main__":
+    
     # Get parameters from ArcGIS Pro tool interface
     input_fc    = arcpy.GetParameterAsText(0) or FEATURE_CLASS   # Input Feature Class
     id_field    = arcpy.GetParameterAsText(1) or FEATURE_ID      # Feature ID Field
