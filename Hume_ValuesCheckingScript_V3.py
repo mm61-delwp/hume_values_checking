@@ -74,23 +74,24 @@ class ValuesCheckTool:
     def run(self) -> None:
         """Execute the main values checking process."""
         try:
+            
+            self.logMessage('info', f"\nStarting values checking for {self.get_basename(self.input_fc)}")
 
-            # Cache values feature classes and adds details to reftab_dict
+            # STEP 1. Cache values feature classes and adds details to reftab_dict
             self.load_values_fcs(self.ref_table)
 
-            # Cache works feature class and buffers
+            # STEP 2. Cache works feature class and buffers
             self.load_and_buffer_works_fc(self.input_fc)
 
-            # Create output dictionary to store intersecting values
+            # STEP 3. Create output dictionary to store intersecting values
             self.create_output_dict(self.input_fc, self.reftab_dict)
 
-            # Process each values feature class
+            # STEP 4. Process intersections between works and values data and add to output dictionary
+            self.logMessage('info', f"\nIntersecting {len(self.ref_table)} values layers")
             for fc_name in self.reftab_dict:
-                
-                # Process intersections between works and values data and add to output dictionary
                 self.process_intersections(fc_name)
 
-            # Create output report
+            # STEP 5. Create output report
             self.data_to_csv()
 
             self.logMessage('info', f"\nScript completed. Total values layers processed: {self.counter}")
@@ -104,11 +105,11 @@ class ValuesCheckTool:
     
     def data_to_csv(self) -> None:
         """
-
+        Convert the populated output dictionary to a formatted CSV file.
+        Calls helper method to combine multiple intersections (results) into a single string.
         """
 
         try:
-            
             # localise dictionary
             output_dict = self.output_dict
                 
@@ -152,10 +153,15 @@ class ValuesCheckTool:
             self.logMessage('error', f"Error while creating CSV file: {str(e)}") 
 
     def _results_to_string(self, list_poly: list, list_buff: list, method: str, buffer_distance: int, geometry_type: str) -> List:
-        
-        try:
+        """
+        Format intersection results into readable strings based on analysis method.
+        Handles PRESENT, COUNT, and MEASURE methods with appropriate units and formatting.
+        Returns formatted string combining polygon and buffer results with unique results 
+        for each feature id/theme separated by CSV line breaks.
+        """
 
-            # Estimate total length
+        try:
+            # temporary storage and mapping
             attrs_poly = []
             attrs_buff = []
 
@@ -240,7 +246,9 @@ class ValuesCheckTool:
 
     def process_intersections(self, fc_name: str, ) -> None:
         """
-
+        Process spatial intersections for a single values layer.
+        Handles both direct polygon intersections and buffer zone intersections,
+        calling helper method for actual spatial analysis and result population.
         """
         
         try:
@@ -289,14 +297,9 @@ class ValuesCheckTool:
     def _process_spatial_intersection(self, works_fc: str, values_fc: str, fc_name: str, 
                                 location_type: str, rpt_fields: List[str]) -> None:
         """
-        Helper method to process spatial intersections and populate output dictionary.
-        
-        Args:
-            works_fc: The works feature class (base or buffered)
-            values_fc: The values feature class
-            fc_name: Name of the feature class being processed
-            location_type: Either "in_polygon" or "in_buffer"
-            rpt_fields: List of reporting fields to extract
+        Perform spatial intersection analysis between one works feature and one values feature.
+        Uses ArcPy Intersect tool and populates output dictionary based on analysis method.
+        Handles geometry-specific calculations for COUNT and MEASURE methods
         """
         
         try:
@@ -415,7 +418,9 @@ class ValuesCheckTool:
 
     def create_output_dict(self, works_fc: str, values_dict: str) -> None:
         """
-        Creates an empty dictionary with all works features and column names
+        Initialise the output dictionary structure for all works features and themes.
+        Creates nested dictionary with feature IDs, theme names, and separate storage
+        for polygon and buffer intersection results.
         """
         
         try:
@@ -445,9 +450,9 @@ class ValuesCheckTool:
         
     def load_and_buffer_works_fc(self, feature_class: str) -> None:
         """
-        Load works feature class and create required buffers
-        Do this after load_values_fcs as it uses reftab_dict to determine required buffer distances
-        Parameter feature_class is required - full path to feature class or shapefile containing works polygons
+        Cache the input works feature class and create required buffer zones.
+        Determines needed buffer distances from reference table and creates
+        in-memory buffered feature classes for efficient spatial analysis.
         """
         try:
             
@@ -511,11 +516,15 @@ class ValuesCheckTool:
 
     def load_values_fcs(self, reftab: str) -> None:
         """
-        Load values feature classes and populate dictionary
-        Parameter reftab is required - full path to gdb reference table containing theme_fields
+        Load and cache all values feature classes specified in the reference table.
+        Reads reference table, creates feature layers for enabled themes, and
+        populates the reftab_dict with analysis parameters and cached layer references.
         """
 
         try:
+
+            self.logMessage('info', f"\nBuffering values layers, please be patient...")
+
             # Create empty dictionary
             self.reftab_dict = {}
 
@@ -546,7 +555,7 @@ class ValuesCheckTool:
                             layer_name = f"{fc_name}_{id(self)}"
                             arcpy.management.MakeFeatureLayer(values_fc_path, layer_name)
                             self.values_cache[fc_name] = layer_name
-                            self.logMessage('info', f"Cached {fc_name}")
+                            # self.logMessage('info', f"Cached {fc_name}")
 
                         # determine geometry type
                         desc = arcpy.Describe(layer_name)
@@ -569,9 +578,10 @@ class ValuesCheckTool:
                             "repfld4": repfld4
                         }
 
+            self.logMessage('info', f"\nBuffered {len(self.ref_table)} values layers")
+
         except Exception as e:
             self.logMessage('error', f"Error while loading values feature classes: {str(e)}")
-
 
     # UTILITY FUNCTIONS
     @staticmethod
@@ -588,14 +598,6 @@ class ValuesCheckTool:
     def get_reporting_fields(self, field_list: List[str]) -> List[str]:
         """Filter out empty or null reporting fields."""
         return [field for field in field_list if field and field.strip()]
-    
-    def clear_layer_selections(self):
-        """Clear all layer selections to prevent memory buildup."""
-        for layer_name in self.layer_selections:
-            try:
-                arcpy.management.SelectLayerByAttribute(layer_name, "CLEAR_SELECTION")
-            except:
-                pass  # Layer might not exist anymore
 
     def logMessage(self, type, message: str) -> None:
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -636,7 +638,6 @@ class ValuesCheckTool:
         except Exception as e:
             self.logMessage('warn', f"Error during cleanup: {str(e)}")
 
-
 if __name__ == "__main__":
     # Get parameters from ArcGIS Pro tool interface
     input_fc    = arcpy.GetParameterAsText(0) or FEATURE_CLASS   # Input Feature Class
@@ -649,10 +650,8 @@ if __name__ == "__main__":
         # Validate inputs
         if not arcpy.Exists(input_fc):
             raise ValueError(f"Input feature class does not exist: {input_fc}")
-        
         if not arcpy.Exists(ref_table):
             raise ValueError(f"Reference table does not exist: {ref_table}")
-        
         if not os.path.exists(gispub_path):
             raise ValueError(f"GIS public location does not exist: {gispub_path}")
         
