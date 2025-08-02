@@ -34,8 +34,6 @@ class ValuesCheckTool:
                  csdl_location: str, output_path: str):
         """Initialize the tool with parameters."""
         self.input_fc = input_fc
-        self.buffer_cache = []
-        self.values_cache = []
         self.buffer_cache = {}  # Changed to dict for O(1) lookup
         self.values_cache = {}  # Changed to dict for O(1) lookup
         self.layer_selections = {}  # Track layer selections for cleanup
@@ -512,9 +510,6 @@ class ValuesCheckTool:
                 self.clear_layer_selections()
                 gc.collect()  # Force garbage collection
                 self.logMessage('info', f"\nPeriodic cleanup completed at feature {self.counter}")
-            
-            # Clear selection
-            # arcpy.SelectLayerByAttribute_management(self.input_fc, "CLEAR_SELECTION")
             
         except Exception as e:
             self.logMessage('error', f"Error processing feature {feature_name}: {str(e)}")
