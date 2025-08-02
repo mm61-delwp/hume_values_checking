@@ -329,10 +329,10 @@ class ValuesCheckTool:
             # selected_count = int(arcpy.management.GetCount(intersecting_values)[0])
             
             # make string for message logging
-            if location_type == "in_polygon" then
-                msg_string = f"between {fc_name} and works polygons (method = {measure})"
+            if location_type == "in_polygon":
+                msg_string = f"between {fc_name} and works polygons (method = {method})"
             else:
-                msg_string = f"between{fc_name} and {buffer_distance}m works buffer (method = {measure})"
+                msg_string = f"between{fc_name} and {buffer_distance}m works buffer (method = {method})"
 
             # if selected_count == 0:
             #     self.logMessage('info', f"No intersections found {msg_string}")
