@@ -143,6 +143,7 @@ class ValuesCheckTool:
                 self.writer.writerow(row_data)
 
             self.output_csv.close()
+            self.logMessage('info', f" - - - - -") 
             self.logMessage('info', f"Results written to CSV: {self.out_csv_path}") 
 
         except Exception as e:
@@ -517,7 +518,7 @@ class ValuesCheckTool:
         """
 
         try:
-            self.logMessage('info', f"\nBuffering values layers, please be patient...")
+            self.logMessage('info', f"Buffering values layers, please be patient...")
 
             # Create empty dictionary
             self.reftab_dict = {}
