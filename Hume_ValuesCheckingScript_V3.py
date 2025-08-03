@@ -3,8 +3,8 @@ ArcGIS Pro Toolbox Script - Values Check Tool
 Performs spatial analysis to check values intersecting with input features.
 Supports presence checks, counts, and area/length measurements with optional buffer zones.
 Author: 
-Date: 20250801
-Version: 3.0.0.1 (Refactored)
+Date: 20250804
+Version: 3.0.0.2
 """
 
 import os
