@@ -72,8 +72,8 @@ class ValuesCheckTool:
         """Execute the main values checking process."""
 
         try:
-            self.logMessage('info', f"\nStarting values checking for {self.get_basename(self.input_fc)}")
-
+            self.logMessage('info', f"Starting values checking for {self.get_basename(self.input_fc)} at {self.get_timestamp()}")
+            self.logMessage('info', f" - - - - -")
             # STEP 1. Cache values feature classes and adds details to reftab_dict
             self.load_values_fcs(self.ref_table)
 
@@ -84,14 +84,16 @@ class ValuesCheckTool:
             self.create_output_dict(self.input_fc, self.reftab_dict)
 
             # STEP 4. Process intersections between works and values data and add to output dictionary
-            self.logMessage('info', f"\nIntersecting {len(self.ref_table)} values layers")
+            self.logMessage('info', f" - - - - -")
+            self.logMessage('info', f"Intersecting {len(self.reftab_dict)} values layers")
             for fc_name in self.reftab_dict:
                 self.process_intersections(fc_name)
 
             # STEP 5. Create output report
             self.data_to_csv()
 
-            self.logMessage('info', f"\nScript completed. Total values layers processed: {len(self.reftab_dict)}")
+            self.logMessage('info', f" - - - - -")
+            self.logMessage('info', f"Script completed. Total values layers processed: {len(self.reftab_dict)}")
             
         except Exception as e:
             self.logMessage('error', f"Error in main execution: {str(e)}")
@@ -325,7 +327,7 @@ class ValuesCheckTool:
             arcpy.analysis.Intersect([works_fc, values_fc], joined_fc)
             intersected_count = int(arcpy.management.GetCount(joined_fc)[0])
             if intersected_count == 0:
-                self.logMessage('info', f"No intersections found {msg_string}")
+                self.logMessage('info', f"{self.progress}/{len(self.reftab_dict)} No intersections found {msg_string}")
                 return
 
             # Step through each row in the join and add to output dictionary if it doesn't already exist
