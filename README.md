@@ -53,7 +53,7 @@ MAX_STRING_LEN  = 50
 ```
 > [!WARNING]  
 > Long fields in values layers (REPFLD1 to REPFLD4) will be truncated to MAX_STRING_LEN characters (default = 50).
-> This can be increased if required, but care must be taken as these strings are aggregated together, which can cause total length of output to exceed Excel's maximum
+> This can be increased if required, but care must be taken as these strings are aggregated together, which can cause total length of output to exceed Excel's maximum (I think 32,000 characters).
 
 ## Reference Table
 The tool requires a reference table with the following fields:
