@@ -49,7 +49,11 @@ THEME_REFTAB    = 'path/to/reference/table.gdb/reference_table'
 GISPUB_PATH     = 'path/to/gis_public/folder'
 OUT_PATH        = 'path/to/output/directory'
 SPATIAL_REF     = 7899  # VICGRID2020 or your preferred spatial reference
+MAX_STRING_LEN  = 50
 ```
+> [!WARNING]  
+> Long fields in values layers (REPFLD1 to REPFLD4) will be truncated to MAX_STRING_LEN characters (default = 50).
+> This can be increased if required, but care must be taken as these strings are aggregated together, which can cause total length of output to exceed Excel's maximum
 
 ## Reference Table
 The tool requires a reference table with the following fields:
