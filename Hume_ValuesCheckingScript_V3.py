@@ -353,10 +353,13 @@ class ValuesCheckTool:
                         
                         # skip if empty or any variety of no-value
                         if str_val and str_val.lower() not in ['none', 'null', 'nan', '']:
-                            # reduce to max characters and add to list field data 
-                            field_values.append(str_val[:MAX_STRING_LEN])
+                            # reduce to max characters and add to list field data
+                            if len(str_val) > MAX_STRING_LEN:
+                                field_values.append(f"{str_val[:MAX_STRING_LEN-3]}...")
+                            else:
+                                field_values.append(str_val)
                         
-                    # add reporting fields (plus count/measure if req.) to output dictionar, as a LIST                    
+                    # add reporting fields (plus count/measure if req.) to output dictionary, as a LIST                    
                     if method.upper() == "PRESENT":
                         # if matching item doesn't exist, add to output dictionary
                         if field_values not in self.output_dict[works_feature_id][theme_name][location_type]:
@@ -516,7 +519,7 @@ class ValuesCheckTool:
         """
 
         try:
-            self.logMessage('info', f"Buffering values layers, please be patient...")
+            self.logMessage('info', f"Caching values layers, please be patient...")
 
             # Create empty dictionary
             self.reftab_dict = {}
@@ -569,7 +572,7 @@ class ValuesCheckTool:
                             "repfld4": repfld4
                         }
 
-            self.logMessage('info', f"Buffered {len(self.reftab_dict)} values layers")
+            self.logMessage('info', f"Cached {len(self.reftab_dict)} values layers")
 
         except Exception as e:
             self.logMessage('error', f"Error while loading values feature classes: {str(e)}")
