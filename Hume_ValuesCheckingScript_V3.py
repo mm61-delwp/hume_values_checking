@@ -17,15 +17,13 @@ import csv
 #            ADJUST THESE IF RUNNING OUTSIDE OF THE ARCGIS PRO TOOLBOX                #
 #######################################################################################
 """Manual parameters - script will use these if arcpy.GetParameterAsText isn't found"""
-FEATURE_CLASS   = 'C:\\data\\daptest\\Hume_uploadtoVDP_20250718.gdb\\DAP_FINAL_AREA_20250718'             # Input Feature Class
-# FEATURE_CLASS   = 'C:\\data\\daptest\\Hume_uploadtoVDP_20250718_short.shp'
-FEATURE_ID      = 'DAP_REF_NO'                        # Feature ID Field
+FEATURE_CLASS   = 'C:\\data\\daptest\\Hume_uploadtoVDP_20250718.gdb\\DAP_FINAL_AREA_20250718' # Input Feature Class
+FEATURE_ID      = 'DAP_REF_NO'                     # Feature ID Field
 THEME_REFTAB    = 'C:\\data\\daptest\\Single Report Tool\\Reference Tables\\reftables.gdb\\REFTABLE_DAP_20250417'  # Theme Reference Table
-# THEME_REFTAB    = 'C:\\data\\daptest\\Single Report Tool\\Reference Tables\\reftables.gdb\\REFTABLE_INDIGENOUS_HERITAGE_ALL_RECORDS'  # Theme Reference Table
-GISPUB_PATH     = 'C:\\data'                          # gis_public folder location
-OUT_PATH        = 'C:\\data\\20250709_hume_test'      # Output Path
-SPATIAL_REF     = 7899                                # Set spatial ref to VICGRID2020
-MAX_STRING_LEN  = 50
+GISPUB_PATH     = 'C:\\data'                       # gis_public folder location
+OUT_PATH        = 'C:\\data\\20250709_hume_test'   # Output Path
+SPATIAL_REF     = 7899                             # Set spatial ref to VICGRID2020
+MAX_STRING_LEN  = 50                               # Limit field length for all rptflds
 
 #######################################################################################
 #######################################################################################
