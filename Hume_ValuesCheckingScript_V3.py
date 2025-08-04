@@ -50,7 +50,7 @@ class ValuesCheckTool:
         # Set up performance logging
         perf_log_path = os.path.join(self.output_path, f"{self.get_timestamp()}_script_performance.txt")
         self.perf_log = open(perf_log_path, "w")
-        self.progress = 0
+        self.progress = 1
 
         # Set up output CSV
         self.out_csv_path = os.path.join(self.output_path, f"{self.get_timestamp()}_{self.get_basename(self.input_fc)}_ValuesCheck.csv")
@@ -282,6 +282,9 @@ class ValuesCheckTool:
                 
                 # Process direct intersections (polygon to polygon/point/line)
                 self._process_spatial_intersection(buffered_works_fc, values_fc, fc_name, "in_buffer", rpt_fields)
+                
+                # Track number of layers processed
+                self.progress += 1
 
         except Exception as e:
             self.logMessage('error', f"Error processing intersections for {fc_name}: {str(e)}")
@@ -400,9 +403,6 @@ class ValuesCheckTool:
                         if not found:
                             field_values.append(measure)  # Add measure as last element
                             self.output_dict[works_feature_id][theme_name][location_type].append(field_values)
-
-                # Track number of layers processed
-                self.progress += 1
 
                 # Clean up temporary feature class
                 if arcpy.Exists(joined_fc):
