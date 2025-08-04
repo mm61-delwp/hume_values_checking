@@ -1,6 +1,6 @@
 # Hume Region Values Checking Tool for ArcGIS Pro
 Spatial analysis tool for ArcGIS Pro that analyses intersections between proposed works (e.g. JFMP, DAP) and multiple values layers, supporting presence checks, counts, and area/length measurements with optional buffer zones.  
-**Version:** 3.0.0.1  
+**Version:** 3.0.0.2  
 **Author:** Michael & Vanessa  
 **Date:** August 1, 2025
 
