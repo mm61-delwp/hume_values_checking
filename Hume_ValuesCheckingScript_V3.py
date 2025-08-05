@@ -214,6 +214,9 @@ class ValuesCheckTool:
                             elif any(value):
                                 val_str = str(value[0])
                         output.append(val_str)
+                    
+                    # sort strings
+                    output.sort()
 
             # if theme has a buffer, format with 'Inside feature:' and 'In XXXm buffer:'
             if buffer_distance > 0:
@@ -283,8 +286,8 @@ class ValuesCheckTool:
                 # Process direct intersections (polygon to polygon/point/line)
                 self._process_spatial_intersection(buffered_works_fc, values_fc, fc_name, "in_buffer", rpt_fields)
                 
-                # Track number of layers processed
-                self.progress += 1
+            # Track number of layers processed
+            self.progress += 1
 
         except Exception as e:
             self.logMessage('error', f"Error processing intersections for {fc_name}: {str(e)}")
