@@ -3,8 +3,8 @@ ArcGIS Pro Toolbox Script - Values Check Tool
 Performs spatial analysis to check values intersecting with input features.
 Supports presence checks, counts, and area/length measurements with optional buffer zones.
 Author: 
-Date: 20250804
-Version: 3.0.0.2
+Date: 20250821
+Version: 3.0.0.3
 """
 
 import os
@@ -218,20 +218,34 @@ class ValuesCheckTool:
                     # sort strings
                     output.sort()
 
-            # if theme has a buffer, format with 'Inside feature:' and 'In XXXm buffer:'
+            # # if theme has a buffer, format with 'Inside feature:' and 'In XXXm buffer:'
+            # if buffer_distance > 0:
+            #     values_string = (
+            #         'In polygon:' +
+            #         ('\r\n' if attrs_poly[0] != "Nil" else ' ') + # Don't add line break for Nil
+            #         '\r\n'.join(str(item) for item in attrs_poly) + 
+            #         f'\r\nIn {buffer_distance}m buffer:' +
+            #         ('\r\n' if attrs_buff[0] != "Nil" else ' ') + # Don't add line break for Nil
+            #         '\r\n'.join(str(item) for item in attrs_buff)
+            #     )
+            # else:
+            #     # if no buffer, just list values found
+            #     values_string = ('In polygon:' +
+            #         ('\r\n' if attrs_poly[0] != "Nil" else ' ') + # Don't add line break for Nil
+            #         '\r\n'.join(str(item) for item in attrs_poly)
+            #     )
+            
+            # if theme has a buffer, format with 'In XXXm buffer:'
             if buffer_distance > 0:
                 values_string = (
-                    'In polygon:' +
-                    ('\r\n' if attrs_poly[0] != "Nil" else ' ') + # Don't add line break for Nil
                     '\r\n'.join(str(item) for item in attrs_poly) + 
                     f'\r\nIn {buffer_distance}m buffer:' +
-                    ('\r\n' if attrs_buff[0] != "Nil" else ' ') + # Don't add line break for Nil
+                    ('\r\n' if attrs_buff[0] != "Nil features" else ' ') + # Don't add line break for Nil
                     '\r\n'.join(str(item) for item in attrs_buff)
                 )
             else:
                 # if no buffer, just list values found
-                values_string = ('In polygon:' +
-                    ('\r\n' if attrs_poly[0] != "Nil" else ' ') + # Don't add line break for Nil
+                values_string = (
                     '\r\n'.join(str(item) for item in attrs_poly)
                 )
             
@@ -258,7 +272,7 @@ class ValuesCheckTool:
                 field = fc_dict[key]
                 if field and field.strip():  # ignore if empty
                     rpt_fields.append(field)
-            query = fc_dict["definition_query"]
+            query = fc_dict["definition_query"] # CHECK THIS LINE!!! Query string is not used.
 
             # Get the base works feature class (unbuffered)
             works_base_name = self.get_basename(self.input_fc)
@@ -347,9 +361,27 @@ class ValuesCheckTool:
                     # some clean up - this needs to be thorough to ensure later robustness
                     for field_value in row[2:]:  # Skip index 0 and 1 (shape & id)
                         
+                        # if isinstance(field_value, datetime):
+                        #     # if date & time, convert to simplified date string
+                        #     str_val = field_value.strftime('%Y-%m-%d')
+                        # else:
+                        #     # make sure value is string and remove leading/trailing spaces 
+                        #     str_val = str(field_value).strip()
+
+                        # # remove any CSV-breaking elements
+                        # str_val = str(str_val).replace("'", "").replace(",", ";").replace("\n", "_n")
+                        
+                        # # skip if empty or any variety of no-value
+                        # if str_val and str_val.lower() not in ['none', 'null', 'nan', '']:
+                        #     # reduce to max characters and add to list field data
+                        #     if len(str_val) > MAX_STRING_LEN:
+                        #         field_values.append(f"{str_val[:MAX_STRING_LEN-3]}...")
+                        #     else:
+                        #         field_values.append(str_val)
+
                         if isinstance(field_value, datetime):
-                            # if date & time, convert to simplified date string
-                            str_val = field_value.strftime('%Y-%m-%d')
+                            # if date & time, convert to unweildy date string
+                            str_val = field_value.strftime('%Y-%m-%d %H:%M:%S')
                         else:
                             # make sure value is string and remove leading/trailing spaces 
                             str_val = str(field_value).strip()
@@ -357,9 +389,9 @@ class ValuesCheckTool:
                         # remove any CSV-breaking elements
                         str_val = str(str_val).replace("'", "").replace(",", ";").replace("\n", "_n")
                         
-                        # skip if empty or any variety of no-value
-                        if str_val and str_val.lower() not in ['none', 'null', 'nan', '']:
-                            # reduce to max characters and add to list field data
+                        # skip if empty or any variety of no-value EXCEPT "None" which is required for... reasons
+                        if str_val and str_val.lower() not in ['null', 'nan', '']:
+                            # restrict string length to whatever is defined in MAX_STRING_LEN
                             if len(str_val) > MAX_STRING_LEN:
                                 field_values.append(f"{str_val[:MAX_STRING_LEN-3]}...")
                             else:
