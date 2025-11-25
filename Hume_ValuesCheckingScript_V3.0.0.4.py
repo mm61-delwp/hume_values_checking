@@ -42,10 +42,10 @@ class ValuesCheckTool:
         self.output_path = output_path
         
         # Initialise dictionaries
-        self.buffer_cache = {}
-        self.values_cache = {}
-        self.reftab_dict = {}
-        self.output_dict = {}
+        self.buffer_cache = {}  # stores the works layer and any required buffers
+        self.values_cache = {}  # stores the values layers with any specified filter applied
+        self.reftab_dict = {}   # stores relevant fields from the geodatabase reference table
+        self.output_dict = {}   # stores details of the intersected values to be combined and exported to CSV 
 
         # Set up performance logging
         perf_log_path = os.path.join(self.output_path, f"{self.get_timestamp()}_script_performance.txt")
@@ -134,6 +134,7 @@ class ValuesCheckTool:
                     polygon_data = feature_data[theme]['in_polygon']
                     buffer_data = feature_data[theme]['in_buffer']
 
+                    # convert lists to single string
                     value_string = self._results_to_string(polygon_data, buffer_data, method, buffer_distance, geometry_type)
                     row_data.append(value_string)
                 
@@ -218,25 +219,7 @@ class ValuesCheckTool:
                     # sort strings
                     output.sort()
 
-            # # if theme has a buffer, format with 'Inside feature:' and 'In XXXm buffer:'
-            # if buffer_distance > 0:
-            #     values_string = (
-            #         'In polygon:' +
-            #         ('\r\n' if attrs_poly[0] != "Nil" else ' ') + # Don't add line break for Nil
-            #         '\r\n'.join(str(item) for item in attrs_poly) + 
-            #         f'\r\nIn {buffer_distance}m buffer:' +
-            #         ('\r\n' if attrs_buff[0] != "Nil" else ' ') + # Don't add line break for Nil
-            #         '\r\n'.join(str(item) for item in attrs_buff)
-            #     )
-            # else:
-            #     # if no buffer, just list values found
-            #     values_string = ('In polygon:' +
-            #         ('\r\n' if attrs_poly[0] != "Nil" else ' ') + # Don't add line break for Nil
-            #         '\r\n'.join(str(item) for item in attrs_poly)
-            #     )
-            
-            # if theme has a buffer, format with 'In XXXm buffer:'
-
+            # combine polygon and buffer results if buffered
             if buffer_distance > 0:
                 values_string = (
                     '\r\n'.join(str(item) for item in attrs_poly) +
